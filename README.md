@@ -1,4 +1,4 @@
-# Tugas 9 Pertemuan 10
+# Tugas 10 Pertemuan 11
 
 Nama: **Ahmad Rian Syaifullah Ritonga**  
 NIM: **H1D022010**  
@@ -6,15 +6,54 @@ Shift Baru: **D**
 
 ## Getting Started IONIC Framework with Firebase and Vue
 
-# Halaman - halaman Aplikasi
+# Halaman Login Aplikasi
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
 <img src="/assets/images/create-1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
-<img src="/assets/images/create-2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
-<img src="/assets/images/create-3.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
 </div>
 
-## Penjelasan
+# Halaman Home Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/home.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Halaman Add ToDo Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/add1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+<img src="/assets/images/add2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Halaman Active ToDo Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/complete1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+<img src="/assets/images/complete2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Halaman Edit ToDo Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/edit1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+<img src="/assets/images/edit2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Halaman Hapus ToDo Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/hapus1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+<img src="/assets/images/hapus2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Halaman Complete ToDo Aplikasi
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;">
+<img src="/assets/images/active1.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+<img src="/assets/images/active2.png" alt="List Produk" style="width: 48%; max-width: 300px;"/>
+</div>
+
+# Penjelasan
 
 ## Membuat Proyek di FireBase
 
@@ -40,6 +79,36 @@ Shift Baru: **D**
 - LoginPage: Halaman ini menyediakan tombol untuk pengguna masuk menggunakan akun Google. Ketika tombol tersebut diklik, fungsi loginWithGoogle dijalankan untuk memulai proses autentikasi.
 - HomePage dan ProfilePage: Halaman profil menampilkan informasi pengguna, seperti nama dan email, yang diambil dari akun Google. Navigasi antara halaman utama (Home) dan halaman profil (Profile) dapat dilakukan melalui komponen TabsMenu.
 - Di halaman profil, kita memanfaatkan authStore untuk mengakses detail pengguna, termasuk nama dan URL foto profil. Jika pengguna tidak memiliki foto profil, aplikasi akan menampilkan gambar default sebagai gantinya.
+
+## Add ToDo
+
+- Jika editingId ada , maka data todo yang sudah ada akan diperbarui.
+- Jika editingId kosong, maka data baru akan ditambahkan dengan status false, menandakan bahwa todo tersebut "active".
+- Setelah menambah data, fungsi loadTodos akan dipanggil untuk memperbarui daftar todo di halaman.
+
+## Edit ToDo
+
+- Ketika tombol edit diklik, data todo yang dipilih akan dimasukkan ke dalam todo.value (yang akan digunakan dalam modal).
+- ID todo yang sedang diedit disimpan dalam editingId.
+- Modal akan dibuka sehingga pengguna dapat mengubah data yang ada.
+
+## Hapus ToDo
+
+- Ketika tombol hapus diklik, handleDelete akan dipanggil.
+- Fungsi ini menghapus todo dari Firestore berdasarkan ID todo yang dipilih.
+- Setelah penghapusan, daftar todo diperbarui dengan memanggil loadTodos().
+
+## Status
+
+- Fungsi ini mengubah nilai status pada todo, dari false menjadi true (atau sebaliknya).
+- Ketika status berubah, todo akan dipindahkan antara dua kategori: active (todo belum selesai) dan completed (todo sudah selesai).
+- Status baru akan diperbarui di Firestore dan pengguna akan mendapatkan notifikasi mengenai perubahan status.
+
+## Memindahkan ke Active atau Completed
+
+- Daftar todo yang aktif (activeTodos) dan selesai (completedTodos) dipisahkan menggunakan computed properties berdasarkan nilai status:
+  - activeTodos: todo dengan status: false
+  - completedTodos: todo dengan status: true
 
 ## Konfigurasi Router dengan Perlindungan Rute
 
