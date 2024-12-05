@@ -1,3 +1,116 @@
+<template>
+  <ion-page>
+    <ion-header class="ion-no-border">
+      <ion-toolbar class="transparent-toolbar">
+        <div class="header-content">
+          <ion-title class="modern-title">Koleksi Mainan</ion-title>
+          <ion-searchbar
+            placeholder="Cari mainan..."
+            class="custom-searchbar"
+            v-model="searchQuery"
+          ></ion-searchbar>
+        </div>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content :fullscreen="true">
+      <div class="ion-padding">
+        <!-- Loading State -->
+        <ion-loading :is-open="isLoading" message="Memuat data..."></ion-loading>
+
+        <!-- Error Message -->
+        <ion-toast
+          :is-open="!!errorMessage"
+          :message="errorMessage"
+          duration={3000}
+          color="danger"
+        ></ion-toast>
+
+        <!-- Grid Layout for Cards -->
+        <ion-grid>
+          <ion-row>
+            <ion-col size="12" size-md="6" v-for="toy in filteredToys" :key="toy.id">
+              <ion-card class="toy-card">
+                <ion-card-header>
+                  <ion-card-title class="toy-title">{{ toy.name }}</ion-card-title>
+                </ion-card-header>
+
+                <ion-card-content>
+                  <p class="toy-description">{{ toy.description }}</p>
+                  
+                  <!-- Status Toggle -->
+                  <ion-chip 
+                    :color="toy.status ? 'success' : 'medium'"
+                    @click="toggleStatus(toy.id, !toy.status)"
+                  >
+                    <ion-icon :icon="toy.status ? checkmark : close"></ion-icon>
+                    <ion-label>{{ toy.status ? 'Aktif' : 'Nonaktif' }}</ion-label>
+                  </ion-chip>
+                  
+                  <div class="action-buttons">
+                    <ion-button 
+                      fill="clear" 
+                      class="edit-button"
+                      @click="openEditModal(toy)"
+                    >
+                      <ion-icon :icon="pencil" slot="start"></ion-icon>
+                      Edit
+                    </ion-button>
+                    
+                    <ion-button 
+                      fill="clear" 
+                      class="delete-button"
+                      @click="confirmDelete(toy.id)"
+                    >
+                      <ion-icon :icon="trash" slot="start"></ion-icon>
+                      Hapus
+                    </ion-button>
+                  </div>
+                </ion-card-content>
+              </ion-card>
+            </ion-col>
+          </ion-row>
+        </ion-grid>
+      </div>
+
+      <!-- Modern Floating Action Button -->
+      <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+        <ion-fab-button class="custom-fab" @click="openAddModal">
+          <ion-icon :icon="add"></ion-icon>
+        </ion-fab-button>
+      </ion-fab>
+
+      <!-- Enhanced Modal -->
+      <input-modal
+        :isOpen="isOpen"
+        :toy="toy"
+        :editingId="editingId"
+        @update:isOpen="isOpen = $event"
+        @submit="handleSave"
+      />
+
+      <!-- Alert Dialog for Delete Confirmation -->
+      <ion-alert
+        :is-open="showDeleteAlert"
+        header="Konfirmasi Hapus"
+        message="Apakah Anda yakin ingin menghapus mainan ini?"
+        :buttons="[
+          {
+            text: 'Batal',
+            role: 'cancel',
+          },
+          {
+            text: 'Hapus',
+            role: 'confirm',
+            handler: () => deleteToy(toyToDelete),
+          },
+        ]"
+        @didDismiss="showDeleteAlert = false"
+      ></ion-alert>
+    </ion-content>
+  </ion-page>
+</template>
+
 <script setup lang="ts">
 import {
   IonContent,
@@ -5,406 +118,285 @@ import {
   IonPage,
   IonTitle,
   IonToolbar,
-  IonItem,
-  IonItemOption,
-  IonItemOptions,
-  IonItemSliding,
-  IonBadge,
-  IonIcon,
+  IonCard,
+  IonCardHeader,
+  IonCardTitle,
+  IonCardContent,
   IonFab,
   IonFabButton,
-  IonSegment,
-  IonSegmentButton,
+  IonIcon,
+  IonButton,
+  IonGrid,
+  IonRow,
+  IonCol,
+  IonSearchbar,
+  IonAlert,
+  IonLoading,
+  IonToast,
+  IonChip,
   IonLabel,
-  IonList,
-  loadingController,
-  IonRefresher,
-  IonRefresherContent,
-  toastController,
-  IonSpinner
 } from '@ionic/vue';
-import {
-  add,
-  checkmarkCircle,
-  timeOutline,
-  create,
-  trash,
-  closeCircle,
-  warningOutline
-} from 'ionicons/icons';
+import { ref, computed, onMounted } from 'vue';
+import { add, pencil, trash, checkmark, close } from 'ionicons/icons';
 import InputModal from '@/components/InputModal.vue';
-import { onMounted, ref, computed, onUnmounted } from 'vue';
-import { firestoreService, type Todo } from '@/utils/firestore';
-import { formatDistanceToNow } from 'date-fns';
-import TabsMenu from '@/components/TabsMenu.vue';
+import { auth, db } from '@/utils/firebase';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+  Timestamp,
+} from 'firebase/firestore';
 
-// Types
-interface TodoForm {
-  title: string;
+// Interface for Toy
+interface Toy {
+  id?: string;
+  name: string;
   description: string;
+  status: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
-// State management
+// Firestore Service
+const firestoreService = {
+  getToyRef() {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error('User not authenticated');
+    return collection(db, 'users', uid, 'toys');
+  },
+
+  async getToys(): Promise<Toy[]> {
+    const ref = this.getToyRef();
+    const q = query(ref, orderBy('updatedAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...(doc.data() as Toy),
+    }));
+  },
+
+  async addToy(toy: Omit<Toy, 'id' | 'createdAt' | 'updatedAt'>) {
+    const ref = this.getToyRef();
+    await addDoc(ref, {
+      ...toy,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async updateToy(id: string, toy: Partial<Omit<Toy, 'id'>>) {
+    const ref = doc(this.getToyRef(), id);
+    await updateDoc(ref, {
+      ...toy,
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async deleteToy(id: string) {
+    const ref = doc(this.getToyRef(), id);
+    await deleteDoc(ref);
+  },
+
+  async updateStatus(id: string, status: boolean) {
+    const ref = doc(this.getToyRef(), id);
+    await updateDoc(ref, {
+      status,
+      updatedAt: Timestamp.now(),
+    });
+  },
+};
+
+// State
 const isOpen = ref(false);
 const editingId = ref<string | null>(null);
-const todos = ref<Todo[]>([]);
-const todo = ref<TodoForm>({
-  title: '',
-  description: '',
-});
-const selectedSegment = ref('active');
+const toy = ref<Partial<Toy>>({ name: '', description: '', status: true });
+const toys = ref<Toy[]>([]);
+const searchQuery = ref('');
+const showDeleteAlert = ref(false);
+const toyToDelete = ref<string | null>(null);
 const isLoading = ref(false);
+const errorMessage = ref('');
 
-// Computed properties
-const activeTodos = computed(() => todos.value.filter(todo => !todo.status));
-const completedTodos = computed(() => todos.value.filter(todo => todo.status));
-const displayTodos = computed(() => selectedSegment.value === 'active' ? activeTodos.value : completedTodos.value);
+// Computed property for filtered toys
+const filteredToys = computed(() => {
+  return toys.value.filter(toy => 
+    toy.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+    toy.description.toLowerCase().includes(searchQuery.value.toLowerCase())
+  );
+});
 
-// Utils
-const showToast = async (message: string, color: string = 'success', icon: string = checkmarkCircle) => {
-  const toast = await toastController.create({
-    message,
-    duration: 2000,
-    color,
-    position: 'top',
-    icon
-  });
-  await toast.present();
-};
-
-const getRelativeTime = (date: Date | { toDate: () => Date }) => {
+// Fetch toys from Firestore
+const fetchToys = async () => {
   try {
-    const jsDate = date?.toDate ? date.toDate() : new Date(date);
-    return formatDistanceToNow(jsDate, { addSuffix: true });
-  } catch (error) {
-    console.error('Date formatting error:', error);
-    return 'Invalid date';
-  }
-};
-
-// Data loading
-const loadTodos = async (showLoading = true) => {
-  if (showLoading) {
     isLoading.value = true;
-  }
-
-  try {
-    todos.value = await firestoreService.getTodos();
+    toys.value = await firestoreService.getToys();
   } catch (error) {
-    console.error('Error loading todos:', error);
-    showToast('Failed to load todos', 'danger', closeCircle);
+    errorMessage.value = 'Gagal memuat data mainan';
+    console.error('Error fetching toys:', error);
   } finally {
     isLoading.value = false;
   }
 };
 
-// Event handlers
-const handleRefresh = async (event: CustomEvent) => {
-  try {
-    await loadTodos(false);
-    showToast('Tasks refreshed successfully');
-  } catch (error) {
-    console.error('Error refreshing:', error);
-    showToast('Failed to refresh tasks', 'danger', warningOutline);
-  } finally {
-    event.target.complete();
-  }
-};
-
-const handleSegmentChange = (event: CustomEvent) => {
-  selectedSegment.value = event.detail.value;
-};
-
-const handleSubmit = async (formData: TodoForm) => {
-  if (!formData.title?.trim()) {
-    await showToast('Title is required', 'warning', warningOutline);
-    return;
-  }
-
-  const loading = await loadingController.create({
-    message: editingId.value ? 'Updating task...' : 'Creating task...'
-  });
-
-  try {
-    await loading.present();
-    
-    if (editingId.value) {
-      await firestoreService.updateTodo(editingId.value, {
-        title: formData.title.trim(),
-        description: formData.description?.trim() || ''
-      });
-      showToast('Task updated successfully');
-    } else {
-      await firestoreService.addTodo({
-        title: formData.title.trim(),
-        description: formData.description?.trim() || '',
-        status: false
-      });
-      showToast('Task created successfully');
-    }
-
-    isOpen.value = false;
-    todo.value = { title: '', description: '' };
-    await loadTodos(false);
-  } catch (error) {
-    console.error('Submit error:', error);
-    showToast('Failed to save task', 'danger', warningOutline);
-  } finally {
-    loading.dismiss();
-    editingId.value = null;
-  }
-};
-
-const handleEdit = async (editTodo: Todo) => {
-  editingId.value = editTodo.id!;
-  todo.value = {
-    title: editTodo.title,
-    description: editTodo.description,
-  }
+// Methods
+const openAddModal = () => {
+  toy.value = { name: '', description: '', status: true };
+  editingId.value = null;
   isOpen.value = true;
 };
 
-const handleDelete = async (deleteTodo: Todo) => {
+const openEditModal = (selectedToy: Toy) => {
+  toy.value = { ...selectedToy };
+  editingId.value = selectedToy.id;
+  isOpen.value = true;
+};
+
+const handleSave = async (newToy: Partial<Toy>) => {
   try {
-    await firestoreService.deleteTodo(deleteTodo.id!);
-    await showToast('Task deleted successfully');
-    await loadTodos(false);
+    isLoading.value = true;
+    if (editingId.value) {
+      await firestoreService.updateToy(editingId.value, newToy);
+    } else {
+      await firestoreService.addToy({
+        name: newToy.name || '',
+        description: newToy.description || '',
+        status: newToy.status || true
+      });
+    }
+    await fetchToys(); // Refresh the list
+    isOpen.value = false;
   } catch (error) {
-    console.error('Delete error:', error);
-    await showToast('Failed to delete task', 'danger', closeCircle);
+    errorMessage.value = 'Gagal menyimpan data mainan';
+    console.error('Error saving toy:', error);
+  } finally {
+    isLoading.value = false;
   }
 };
 
-const handleStatus = async (statusTodo: Todo) => {
+const toggleStatus = async (id: string | undefined, status: boolean) => {
+  if (!id) return;
   try {
-    await firestoreService.updateStatus(statusTodo.id!, !statusTodo.status);
-    await showToast(
-      `Task marked as ${!statusTodo.status ? 'completed' : 'active'}`,
-      'success',
-      !statusTodo.status ? checkmarkCircle : timeOutline
-    );
-    await loadTodos(false);
+    isLoading.value = true;
+    await firestoreService.updateStatus(id, status);
+    await fetchToys();
   } catch (error) {
-    console.error('Status update error:', error);
-    await showToast('Failed to update status', 'danger', closeCircle);
+    errorMessage.value = 'Gagal mengubah status mainan';
+    console.error('Error updating status:', error);
+  } finally {
+    isLoading.value = false;
   }
 };
 
-// Lifecycle hooks
+const confirmDelete = (id: string | undefined) => {
+  if (!id) return;
+  toyToDelete.value = id;
+  showDeleteAlert.value = true;
+};
+
+const deleteToy = async (id: string | null) => {
+  if (!id) return;
+  try {
+    isLoading.value = true;
+    await firestoreService.deleteToy(id);
+    await fetchToys(); // Refresh the list
+    toyToDelete.value = null;
+  } catch (error) {
+    errorMessage.value = 'Gagal menghapus mainan';
+    console.error('Error deleting toy:', error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// Fetch data on component mount
 onMounted(() => {
-  loadTodos();
+  fetchToys();
 });
 </script>
 
-<template>
-  <ion-page>
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Tasks</ion-title>
-      </ion-toolbar>
-      <ion-toolbar>
-        <ion-segment v-model="selectedSegment" @ionChange="handleSegmentChange">
-          <ion-segment-button value="active">
-            <ion-label>Active ({{ activeTodos.length }})</ion-label>
-          </ion-segment-button>
-          <ion-segment-button value="completed">
-            <ion-label>Completed ({{ completedTodos.length }})</ion-label>
-          </ion-segment-button>
-        </ion-segment>
-      </ion-toolbar>
-    </ion-header>
-
-    <ion-content>
-      <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
-        <ion-refresher-content></ion-refresher-content>
-      </ion-refresher>
-
-      <div class="task-container">
-        <!-- Loading State -->
-        <div v-if="isLoading" class="loading-container">
-          <ion-spinner name="circular"></ion-spinner>
-          <p>Loading tasks...</p>
-        </div>
-
-        <!-- Task List -->
-        <ion-list v-else>
-          <ion-item-sliding v-for="todo in displayTodos" :key="todo.id">
-            <!-- Delete Option -->
-            <ion-item-options side="start">
-              <ion-item-option color="danger" @click="handleDelete(todo)">
-                <div class="option-content">
-                  <ion-icon :icon="trash"></ion-icon>
-                  <span>Delete</span>
-                </div>
-              </ion-item-option>
-            </ion-item-options>
-
-            <!-- Task Item -->
-            <ion-item lines="none" class="task-item">
-              <div class="task-content" :class="{ 'completed': todo.status }">
-                <div class="task-header">
-                  <h2>{{ todo.title }}</h2>
-                  <ion-badge :color="todo.status ? 'success' : 'warning'">
-                    {{ todo.status ? 'Completed' : 'Active' }}
-                  </ion-badge>
-                </div>
-                <p v-if="todo.description">{{ todo.description }}</p>
-                <div class="task-footer">
-                  <ion-badge color="medium">
-                    {{ getRelativeTime(todo.updatedAt) }}
-                  </ion-badge>
-                </div>
-              </div>
-            </ion-item>
-
-            <!-- Action Options -->
-            <ion-item-options side="end">
-              <ion-item-option color="primary" @click="handleEdit(todo)">
-                <div class="option-content">
-                  <ion-icon :icon="create"></ion-icon>
-                  <span>Edit</span>
-                </div>
-              </ion-item-option>
-              <ion-item-option 
-                :color="todo.status ? 'warning' : 'success'" 
-                @click="handleStatus(todo)"
-              >
-                <div class="option-content">
-                  <ion-icon :icon="todo.status ? timeOutline : checkmarkCircle"></ion-icon>
-                  <span>{{ todo.status ? 'Undone' : 'Done' }}</span>
-                </div>
-              </ion-item-option>
-            </ion-item-options>
-          </ion-item-sliding>
-
-          <!-- Empty State -->
-          <ion-item v-if="displayTodos.length === 0" class="empty-state">
-            <div class="empty-content">
-              <h3>No {{ selectedSegment }} tasks</h3>
-              <p>{{ selectedSegment === 'active' ? 'Add a new task using the + button below' : 'Complete some tasks to see them here' }}</p>
-            </div>
-          </ion-item>
-        </ion-list>
-      </div>
-
-      <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="isOpen = true">
-          <ion-icon :icon="add"></ion-icon>
-        </ion-fab-button>
-      </ion-fab>
-
-      <InputModal
-        v-model:is-open="isOpen"
-        v-model:todo="todo"
-        :editing-id="editingId"
-        @submit="handleSubmit"
-      />
-    </ion-content>
-  </ion-page>
-</template>
-
 <style scoped>
-.task-container {
-  padding: 16px;
+.transparent-toolbar {
+  --background: transparent;
+  --border-width: 0;
 }
 
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  color: var(--ion-color-medium);
+.header-content {
+  background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+  padding: 1rem;
+  border-radius: 0 0 1.5rem 1.5rem;
 }
 
-.task-item {
-  --padding-start: 0;
-  --padding-end: 0;
-  --inner-padding-end: 0;
-  margin-bottom: 8px;
+.modern-title {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
 }
 
-.task-content {
-  width: 100%;
-  background: var(--ion-color-light);
-  border-radius: 8px;
-  padding: 16px;
+.custom-searchbar {
+  --background: rgba(255, 255, 255, 0.1);
+  --color: white;
+  --placeholder-color: rgba(255, 255, 255, 0.8);
+  --border-radius: 1rem;
+  --box-shadow: none;
 }
 
-.task-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+.toy-card {
+  border-radius: 1rem;
+  margin: 0.5rem 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
 }
 
-.task-header h2 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 500;
+.toy-card:hover {
+  transform: translateY(-2px);
 }
 
-.task-content p {
-  margin: 8px 0;
-  color: var(--ion-color-medium);
-}
-
-.task-footer {
-  margin-top: 8px;
-}
-
-.completed {
-  opacity: 0.7;
-}
-
-.completed h2 {
-  text-decoration: line-through;
-}
-
-.option-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-ion-item-option {
-  --padding-top: 8px;
-  --padding-bottom: 8px;
-  min-width: 80px;
-}
-
-.empty-state {
-  --padding-start: 0;
-  --padding-end: 0;
-}
-
-.empty-content {
-  width: 100%;
-  text-align: center;
-  padding: 32px 16px;
-}
-
-.empty-content h3 {
-  margin: 0 0 8px;
+.toy-title {
+  font-size: 1.25rem;
+  font-weight: 600;
   color: var(--ion-color-dark);
 }
 
-.empty-content p {
-  margin: 0;
+.toy-description {
   color: var(--ion-color-medium);
+  margin: 0.5rem 0 1rem 0;
+  line-height: 1.5;
 }
 
-ion-badge {
-  padding: 6px 12px;
-  border-radius: 16px;
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
-ion-segment {
-  padding: 8px;
+.edit-button {
+  --color: var(--ion-color-primary);
 }
 
-ion-fab {
-  margin: 16px;
+.delete-button {
+  --color: var(--ion-color-danger);
+}
+
+.custom-fab {
+  --background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+  --box-shadow: 0 4px 12px rgba(var(--ion-color-primary-rgb), 0.4);
+}
+
+ion-chip {
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  ion-grid {
+    padding: 1rem;
+  }
 }
 </style>
